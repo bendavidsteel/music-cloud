@@ -8,8 +8,9 @@ SONGS = []
 
 # configuration
 DEBUG = True
-UPLOAD_FOLDER = '/media/songs'
+UPLOAD_FOLDER = './media/songs'
 ALLOWED_EXTENSIONS = set(['mp3'])
+BASEDIR = os.path.abspath(os.path.dirname(__file__))
 
 # instantiate the app
 app = Flask(__name__)
@@ -26,7 +27,7 @@ def allowed_filename(filename):
 # sanity check route
 @app.route('/ping', methods=['GET'])
 def ping_pong():
-    return jsonify('pong!')
+    return jsonify('new pong!')
 
 
 @app.route('/songs', methods=['GET', 'POST'])
@@ -46,7 +47,7 @@ def all_songs():
         submitted_file = request.files.get('file')
         if submitted_file and allowed_filename(submitted_file.filename):
             filename = secure_filename(submitted_file.filename)
-            submitted_file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            submitted_file.save(os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], filename))
 
         response_object['message'] = 'Song added!'
     else:
@@ -58,22 +59,21 @@ def all_songs():
 def single_song(song_id):
     response_object = {'status': 'success'}
     if request.method == 'PUT':
-        post_data = request.get_json()
         remove_song(song_id)
 
         # adding song data to array
         SONGS.append({
             'id': uuid.uuid4().hex,
-            'name': post_data.get('name'),
-            'artist': post_data.get('artist'),
-            'listened': post_data.get('listened')
+            'name': request.form.get('name'),
+            'artist': request.form.get('artist'),
+            'listened': request.form.get('listened')
         })
 
         # saving song file
-        submitted_file = request.files['file']
+        submitted_file = request.files.get('file')
         if submitted_file and allowed_filename(submitted_file.filename):
             filename = secure_filename(submitted_file.filename)
-            submitted_file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+            submitted_file.save(os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], filename))
 
 
         response_object['message'] = 'Song updated!'

@@ -227,8 +227,6 @@ export default {
     onSubmit(evt) {
       evt.preventDefault();
       this.$refs.addSongModal.hide();
-      // reset form
-      this.initForm();
 
       let listened = false;
       if (this.addSongForm.listened[0]) listened = true;
@@ -241,6 +239,7 @@ export default {
       formData.append('file', this.addSongForm.file);
 
       this.addSong(formData);
+      this.initForm();
     },
     onSubmitUpdate(evt) {
       evt.preventDefault();
