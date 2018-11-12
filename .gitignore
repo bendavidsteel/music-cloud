@@ -1,3 +1,4 @@
 server/media/
 server/env/
+server/.dynamodb/
 .vscode/
