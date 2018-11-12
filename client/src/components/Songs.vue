@@ -12,7 +12,6 @@
             <tr>
               <th scope="col">Song Name</th>
               <th scope="col">Artist</th>
-              <th scope="col">Listened?</th>
               <th></th>
             </tr>
           </thead>
@@ -21,10 +20,13 @@
               <td>{{ song.name }}</td>
               <td>{{ song.artist }}</td>
               <td>
-                <span v-if="song.listened">Yes</span>
-                <span v-else>No</span>
-              </td>
-              <td>
+                <button
+                        type="button"
+                        class="btn btn-success btn-sm"
+                        v-b-modal.song-download-modal
+                        @click="onDownloadSong(song)">
+                    Download
+                </button>
                 <button
                         type="button"
                         class="btn btn-warning btn-sm"
@@ -53,9 +55,9 @@
                     label="Song Name:"
                     label-for="form-name-input">
           <b-form-input id="form-name-input"
+                        ref="formNameInput"
                         type="text"
                         v-model="addSongForm.name"
-                        required
                         placeholder="Enter song name">
           </b-form-input>
         </b-form-group>
@@ -63,18 +65,19 @@
                       label="Artist:"
                       label-for="form-artist-input">
             <b-form-input id="form-artist-input"
+                          ref="formArtistInput"
                           type="text"
                           v-model="addSongForm.artist"
-                          required
                           placeholder="Enter artist">
             </b-form-input>
           </b-form-group>
-        <b-form-group id="form-listened-group">
-          <b-form-checkbox-group v-model="addSongForm.listened" id="form-checks">
-            <b-form-checkbox value="true">Listened?</b-form-checkbox>
-          </b-form-checkbox-group>
+        <b-form-group id="form-file-group">
+          <b-form-file v-model="addSongForm.file"
+                       ref="formFileInput"
+                       class="mt-3"
+                       plain>
+          </b-form-file>
         </b-form-group>
-        <b-form-file v-model="addSongForm.file" class="mt-3" plain></b-form-file>
         <br/>
         <b-button type="submit" variant="primary">Submit</b-button>
         <b-button type="reset" variant="danger">Reset</b-button>
@@ -89,9 +92,9 @@
                     label="Song Name:"
                     label-for="form-name-edit-input">
           <b-form-input id="form-name-edit-input"
+                        ref="formNameEditInput"
                         type="text"
                         v-model="editForm.name"
-                        required
                         placeholder="Enter name">
           </b-form-input>
         </b-form-group>
@@ -99,18 +102,19 @@
                       label="Artist:"
                       label-for="form-artist-edit-input">
             <b-form-input id="form-artist-edit-input"
+                          ref="formArtistEditInput"
                           type="text"
                           v-model="editForm.artist"
-                          required
                           placeholder="Enter artist">
             </b-form-input>
         </b-form-group>
-        <b-form-group id="form-listened-edit-group">
-          <b-form-checkbox-group v-model="editForm.listened" id="form-checks">
-            <b-form-checkbox value="true">Listened?</b-form-checkbox>
-          </b-form-checkbox-group>
+        <b-form-group id="form-file-edit-group">
+          <b-form-file ref="formFileEditInput"
+                       v-model="editForm.file"
+                       class="mt-3"
+                       plain>
+          </b-form-file>
         </b-form-group>
-        <b-form-file v-model="editForm.file" class="mt-3" plain></b-form-file>
         <br/>
         <b-button type="submit" variant="primary">Update</b-button>
         <b-button type="reset" variant="danger">Cancel</b-button>
@@ -130,18 +134,17 @@ export default {
       addSongForm: {
         name: '',
         artist: '',
-        listened: [],
         file: null,
       },
       editForm: {
         id: '',
         name: '',
         artist: '',
-        listened: [],
         file: null,
       },
       message: '',
-      showMessage: false,
+      showMessage: true,
+      basePath: 'http://localhost:5000',
     };
   },
   components: {
@@ -170,7 +173,7 @@ export default {
         .then(() => {
           this.getSongs();
           this.message = 'Song added!';
-          this.showMessage = true;
+          setTimeout(() => { this.message = ''; }, 1000);
         })
         .catch((error) => {
           // eslint-disable-next-line
@@ -189,7 +192,7 @@ export default {
         .then(() => {
           this.getSongs();
           this.message = 'Song updated!';
-          this.showMessage = true;
+          setTimeout(() => { this.message = ''; }, 1000);
         })
         .catch((error) => {
           // eslint-disable-next-line
@@ -203,7 +206,7 @@ export default {
         .then(() => {
           this.getSongs();
           this.message = 'Song removed!';
-          this.showMessage = true;
+          setTimeout(() => { this.message = ''; }, 1000);
         })
         .catch((error) => {
           // eslint-disable-next-line
@@ -211,31 +214,46 @@ export default {
           this.getSongs();
         });
     },
+    downloadSong(song) {
+      const path = `http://localhost:5000/songs/${song.id}`;
+      axios({
+        url: path,
+        method: 'GET',
+        responseType: 'blob', // important
+      }).then((response) => {
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        const title = `${song.name}_${song.artist}.mp3`;
+        link.setAttribute('download', title); // or any other extension
+        document.body.appendChild(link);
+        link.click();
+        this.message = 'Song downloaded!';
+        setTimeout(() => { this.message = ''; }, 1000);
+      })
+        .catch((error) => {
+          // eslint-disable-next-line
+          console.error(error);
+        });
+    },
     initForm() {
       this.addSongForm.name = '';
       this.addSongForm.artist = '';
-      this.addSongForm.listened = [];
-      this.addSongForm.file = null;
-      this.addSongForm.file.name = '';
       this.editForm.id = '';
       this.editForm.name = '';
       this.editForm.artist = '';
-      this.editForm.listened = [];
-      this.editForm.file = null;
-      this.editForm.file.name = '';
+
+      this.$refs.formFileInput.reset();
+      this.$refs.formFileEditInput.reset();
     },
     onSubmit(evt) {
       evt.preventDefault();
       this.$refs.addSongModal.hide();
 
-      let listened = false;
-      if (this.addSongForm.listened[0]) listened = true;
-
       const formData = new FormData();
 
       formData.append('name', this.addSongForm.name);
       formData.append('artist', this.addSongForm.artist);
-      formData.append('listened', listened);
       formData.append('file', this.addSongForm.file);
 
       this.addSong(formData);
@@ -244,14 +262,11 @@ export default {
     onSubmitUpdate(evt) {
       evt.preventDefault();
       this.$refs.editSongModal.hide();
-      let listened = false;
-      if (this.editForm.listened[0]) listened = true;
 
       const formData = new FormData();
 
       formData.append('name', this.addSongForm.name);
       formData.append('artist', this.addSongForm.artist);
-      formData.append('listened', listened);
       formData.append('file', this.addSongForm.file);
 
       this.updateSong(formData, this.editForm.id);
@@ -273,6 +288,9 @@ export default {
     },
     editSong(song) {
       this.editForm = song;
+    },
+    onDownloadSong(song) {
+      this.downloadSong(song);
     },
   },
   created() {
