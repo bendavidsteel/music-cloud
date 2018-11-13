@@ -183,6 +183,7 @@ export default {
     },
     updateSong(payload, songID) {
       const path = `http://localhost:5000/songs/${songID}`;
+      console.log(JSON.stringify(payload));
       axios.put(path, payload,
         {
           headers: {
@@ -265,9 +266,12 @@ export default {
 
       const formData = new FormData();
 
-      formData.append('name', this.addSongForm.name);
-      formData.append('artist', this.addSongForm.artist);
-      formData.append('file', this.addSongForm.file);
+      formData.append('name', this.editForm.name);
+      console.log(formData);
+      formData.append('artist', this.editForm.artist);
+      formData.append('file', this.editForm.file);
+
+      console.log(formData);
 
       this.updateSong(formData, this.editForm.id);
       this.initForm();
@@ -293,7 +297,7 @@ export default {
       this.downloadSong(song);
     },
   },
-  created() {
+  beforeMount() {
     this.getSongs();
   },
 };

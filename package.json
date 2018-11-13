@@ -15,5 +15,8 @@
   "bugs": {
     "url": "https://github.com/bendavidsteel/music-cloud/issues"
   },
-  "homepage": "https://github.com/bendavidsteel/music-cloud#readme"
+  "homepage": "https://github.com/bendavidsteel/music-cloud#readme",
+  "devDependencies": {
+    "serverless-offline": "^3.31.2"
+  }
 }

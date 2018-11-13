@@ -5,8 +5,6 @@ from werkzeug.utils import secure_filename
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS, cross_origin
 
-SONGS = []
-
 # configuration
 DEBUG = True
 UPLOAD_FOLDER = 'media/songs'
@@ -61,17 +59,9 @@ def all_songs():
             name = request.form.get('name')
             artist = request.form.get('artist')
 
-            # saving song data
-            SONGS.append({
-                'id': song_id,
-                'name': name,
-                'artist': artist,
-                'file': file_name,
-            })
-
             # posting song to db
             resp = client.put_item(
-                TableName=USERS_TABLE
+                TableName=USERS_TABLE,
                 Item = {
                     'songId': {'S': song_id},
                     'name': {'S': name},
@@ -80,26 +70,30 @@ def all_songs():
                 }
             )
 
-            file_path = os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], filename)
-            print("!!!")
-            print(BASEDIR)
-            print(filename)
-            print(file_path)
+            file_path = os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], file_name)
             submitted_file.save(file_path)
         else:
             return jsonify({'error': 'Please provide valid file'}),400
 
         response_object['message'] = 'Song added!'
-    else:
+    
+    if request.method == 'GET':
         # fetching songs from db
-        resp = client.get_item(
-            TableName = USERS_TABLE,
-            Key = {
-                'songId': { 'S': song_id}
-            }
+        resp = client.scan(
+            TableName = USERS_TABLE
         )
-        item = resp.get('Item')
-        jsonify({})
+
+        items = resp.get('Items')
+
+        SONGS = []
+
+        for item in items:
+            SONGS.append({
+                'id': item.get('songId').get('S'),
+                'name': item.get('name').get('S'),
+                'artist': item.get('artist').get('S')
+            })
+
         response_object['songs'] = SONGS
     return jsonify(response_object)
 
@@ -108,32 +102,39 @@ def all_songs():
 def single_song(song_id):
     response_object = {'status': 'success'}
     if request.method == "GET":
-        song = get_song(song_id)
 
-        if song != False:
-            file_path = os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], song['file'])
-            
-            try:
-                response = send_file(file_path, 
-                                     as_attachment=True,
-                                     attachment_filename=song['name'] + '_' + song['artist'] + '.mp3',
-                                     mimetype='audio/mpeg')
-                
-                response.headers.add('Access-Control-Allow-Origin', '*')
-                response.headers.add('Name_Artist', song['name'] + '_' + song['artist'] + '.mp3')
+        resp = client.get_item(
+            TableName = USERS_TABLE,
+            Key = {
+                'songId': {'S':song_id }
+            }
+        )
+        item = resp.get('Item')
 
-                return response
+        if not item:
+            return jsonify({'error': 'Song does not exist'}), 404
+
+        file_name = item.get('fileName').get('S')
+
+        file_path = os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], file_name)
+        
+        try:
+            response = send_file(file_path, 
+                                    as_attachment=True,
+                                    mimetype='audio/mpeg')
             
-            except Exception as e:
-                print("!!!")
-                print(e.with_traceback)
-                print("!!!")
+            response.headers.add('Access-Control-Allow-Origin', '*')
+
+            return response
+        
+        except Exception as e:
+            print(e.with_traceback)
+            return jsonify({'error': 'Unable to deliver song file'}), 400
 
         
 
 
     if request.method == 'PUT':
-        remove_song(song_id)
 
         # saving song file
         submitted_file = request.files.get('file')
@@ -141,52 +142,83 @@ def single_song(song_id):
 
             name_artist = request.form.get('name') + '_' + request.form.get('artist') + '.mp3'
 
-            filename = secure_filename(name_artist)
+            file_name = secure_filename(name_artist)
 
-            # saving song data
-            SONGS.append({
-                'id': uuid.uuid4().hex,
-                'name': request.form.get('name'),
-                'artist': request.form.get('artist'),
-                'file': filename,
-            })
+            name = request.form.get('name')
+            artist = request.form.get('artist')
 
-            submitted_file.save(os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], filename))
+            print(name)
+
+            # posting song to db
+            resp = client.update_item(
+                TableName=USERS_TABLE,
+                Key = {
+                    'songId': {'S': song_id},
+                    'name': {'S': name},
+                    'artist': {'S': artist},
+                    'fileName': {'S': file_name}
+                }
+            )
+
+            submitted_file.save(os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], file_name))
+        else:
+            name = request.form.get('name')
+            artist = request.form.get('artist')
+
+            print("!!!")
+            print(name)
+            print(artist)
+            print("!!!")
+
+            # posting song to db
+            resp = client.update_item(
+                TableName=USERS_TABLE,
+                Key = {
+                    'songId': {'S': song_id},
+                    'name': {'S': name},
+                    'artist': {'S': artist}
+                }
+            )
+
 
         response_object['message'] = 'Song updated!'
 
     if request.method == 'DELETE':
 
-        song = get_song(song_id)
+        resp = client.get_item(
+            TableName = USERS_TABLE,
+            Key = {
+                'songId': {'S': song_id }
+            }
+        )
+        item = resp.get('Item')
 
-        if song != False:
-            file_path = os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], song['file'])
+        if not item:
+            return jsonify({'error': 'Song does not exist'}), 404
 
-            try:
-                os.remove(file_path)
-            except Exception as e:
-                print(e.with_traceback)
+        file_name = item.get('fileName').get('S')
 
-            remove_song(song_id)
-            response_object['message'] = 'Song removed!'
-        else:
-            response_object['message'] = 'Song file not present to be deleted'
+        resp = client.delete_item(
+            TableName=USERS_TABLE,
+            Key = {
+                'songId': {'S': song_id}
+            }
+        )
+
+        # if not song:
+        #     return jsonify({'error': 'Unable to delete song file as it was not found'}), 404
+
+        file_path = os.path.join(BASEDIR, app.config['UPLOAD_FOLDER'], file_name)
+
+        try:
+            os.remove(file_path)
+        except Exception as e:
+            print(e.with_traceback)
+            return jsonify({'error': 'Unable to delete song file, please try again'}), 400
+
+        response_object['message'] = 'Song removed!'
 
     return jsonify(response_object)
-
-
-def get_song(song_id):
-    for song in SONGS:
-        if song['id'] == song_id:
-            return song
-    return False
-
-def remove_song(song_id):
-    for song in SONGS:
-        if song['id'] == song_id:
-            SONGS.remove(song)
-            return True
-    return False
 
 
 if __name__ == '__main__':
