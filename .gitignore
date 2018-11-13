@@ -1,0 +1,5 @@
+server/media/
+server/venv/
+server/.dynamodb/
+.vscode/
+node_modules/
