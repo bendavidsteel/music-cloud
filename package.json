@@ -17,6 +17,7 @@
   },
   "homepage": "https://github.com/bendavidsteel/music-cloud#readme",
   "devDependencies": {
-    "serverless-offline": "^3.31.2"
+    "serverless-offline": "^3.31.2",
+    "serverless-s3-local": "^0.3.19"
   }
 }
