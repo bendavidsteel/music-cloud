@@ -20,6 +20,12 @@
               <td>{{ song.name }}</td>
               <td>{{ song.artist }}</td>
               <td>
+                <audio controls>
+                  <source v-bind:src="song.file" type="audio/mpeg">
+                  Your browser does not support the audio element.
+                </audio>
+              </td>
+              <td>
                 <button
                         type="button"
                         class="btn btn-success btn-sm"
@@ -183,7 +189,6 @@ export default {
     },
     updateSong(payload, songID) {
       const path = `http://localhost:5000/songs/${songID}`;
-      console.log(JSON.stringify(payload));
       axios.put(path, payload,
         {
           headers: {
@@ -217,21 +222,17 @@ export default {
     },
     downloadSong(song) {
       const path = `http://localhost:5000/songs/${song.id}`;
-      axios({
-        url: path,
-        method: 'GET',
-        responseType: 'blob', // important
-      }).then((response) => {
-        const url = window.URL.createObjectURL(new Blob([response.data]));
-        const link = document.createElement('a');
-        link.href = url;
-        const title = `${song.name}_${song.artist}.mp3`;
-        link.setAttribute('download', title); // or any other extension
-        document.body.appendChild(link);
-        link.click();
-        this.message = 'Song downloaded!';
-        setTimeout(() => { this.message = ''; }, 1000);
-      })
+      axios.get(path)
+        .then((response) => {
+          const link = document.createElement('a');
+          link.href = response.data.file_url;
+          const title = `${song.name}_${song.artist}.mp3`;
+          link.setAttribute('download', title); // or any other extension
+          document.body.appendChild(link);
+          link.click();
+          this.message = 'Song downloaded!';
+          setTimeout(() => { this.message = ''; }, 1000);
+        })
         .catch((error) => {
           // eslint-disable-next-line
           console.error(error);
@@ -267,11 +268,8 @@ export default {
       const formData = new FormData();
 
       formData.append('name', this.editForm.name);
-      console.log(formData);
       formData.append('artist', this.editForm.artist);
       formData.append('file', this.editForm.file);
-
-      console.log(formData);
 
       this.updateSong(formData, this.editForm.id);
       this.initForm();

@@ -98,10 +98,15 @@ def all_songs():
         SONGS = []
 
         for item in items:
+            file_name = item.get('fileName').get('S')
+            
+            file_url = '%s/%s/%s' % (s3.meta.endpoint_url, BUCKET_NAME, file_name)
+
             SONGS.append({
                 'id': item.get('songId').get('S'),
                 'name': item.get('name').get('S'),
-                'artist': item.get('artist').get('S')
+                'artist': item.get('artist').get('S'),
+                'file': file_url
             })
 
         response_object['songs'] = SONGS
@@ -126,22 +131,26 @@ def single_song(song_id):
 
         file_name = item.get('fileName').get('S')
         
-        # try:
-        obj = s3.get_object(
-            Bucket = BUCKET_NAME,
-            Key = file_name
-        )
+        file_url = '%s/%s/%s' % (s3.meta.endpoint_url, BUCKET_NAME, file_name)
 
-        fileobj = obj['Body']
+        response_object['file_url'] = file_url
 
-        response = send_file(fileobj, 
-                                as_attachment=True,
-                                attachment_filename=file_name,
-                                mimetype='audio/mpeg')
+        # # try:
+        # obj = s3.get_object(
+        #     Bucket = BUCKET_NAME,
+        #     Key = file_name
+        # )
+
+        # fileobj = obj['Body']
+
+        # response = send_file(fileobj, 
+        #                         as_attachment=True,
+        #                         attachment_filename=file_name,
+        #                         mimetype='audio/mpeg')
         
-        response.headers.add('Access-Control-Allow-Origin', '*')
+        # response_object.headers.add('Access-Control-Allow-Origin', '*')
 
-        return response
+        return jsonify(response_object)
         
         # except Exception as e:
         #     print(e)
@@ -167,6 +176,11 @@ def single_song(song_id):
         artist = item.get('artist').get('S')
         file_name = item.get('fileName').get('S')
 
+        name = request.form.get('name')
+        artist = request.form.get('artist')
+
+        print(name)
+
         # saving song file
         submitted_file = request.files.get('file')
         if submitted_file and allowed_filename(submitted_file.filename):
@@ -175,24 +189,24 @@ def single_song(song_id):
 
             file_name = secure_filename(name_artist)
 
-            name = request.form.get('name')
-            artist = request.form.get('artist')
-
             output = upload_file_to_s3(submitted_file, file_name, BUCKET_NAME)
             print(output)
-        else:
-            name = request.form.get('name')
-            artist = request.form.get('artist')
 
 
         # posting song to db
         resp = db.update_item(
             TableName=USERS_TABLE,
             Key = {
-                'songId': {'S': song_id},
-                'name': {'S': name},
-                'artist': {'S': artist},
-                'fileName': {'S': file_name}
+                'songId': {'S': song_id}
+            },
+            UpdateExpression="set #n = :n, artist = :a, fileName = :f",
+            ExpressionAttributeValues={
+                ':n': {'S': name},
+                ':a': {'S': artist},
+                ':f': {'S': file_name}
+            },
+            ExpressionAttributeNames={
+                '#n': 'name'
             }
         )
 
