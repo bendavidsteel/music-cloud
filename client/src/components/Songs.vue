@@ -10,13 +10,18 @@
         <table class="table table-hover">
           <thead>
             <tr>
+              <th></th>
               <th scope="col">Song Name</th>
               <th scope="col">Artist</th>
+              <th></th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(song, index) in songs" :key="index">
+              <td>
+                <img v-bind:src="song.image_url" alt="" height="150" width="150">
+              </td>
               <td>{{ song.name }}</td>
               <td>{{ song.artist }}</td>
               <td>
@@ -45,6 +50,14 @@
                         class="btn btn-danger btn-sm"
                         @click="onDeleteSong(song)">
                     Delete
+                </button>
+                <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        v-if="song.spotify_found"
+                        v-b-modal.recommend-songs-modal
+                        @click="onRecommendSongs(song)">
+                    Recommend
                 </button>
               </td>
             </tr>
@@ -126,6 +139,36 @@
         <b-button type="reset" variant="danger">Cancel</b-button>
       </b-form>
     </b-modal>
+    <b-modal ref="recommendSongsModal"
+             id="recommend-songs-modal"
+             title="Recommended"
+             hide-footer>
+      <table class="table table-hover">
+          <thead>
+            <tr>
+              <th></th>
+              <th scope="col">Song Name</th>
+              <th scope="col">Artist</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="(song, index) in recommended" :key="index">
+              <td>
+                <img v-bind:src="song.image_url" alt="" height="150" width="150">
+              </td>
+              <td>{{ song.name }}</td>
+              <td>{{ song.artist }}</td>
+              <td>
+                <audio controls>
+                  <source v-bind:src="song.file" type="audio/mpeg">
+                  Your browser does not support the audio element.
+                </audio>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+    </b-modal>
   </div>
 </template>
 
@@ -137,6 +180,7 @@ export default {
   data() {
     return {
       songs: [],
+      recommended: [],
       addSongForm: {
         name: '',
         artist: '',
@@ -179,7 +223,7 @@ export default {
         .then(() => {
           this.getSongs();
           this.message = 'Song added!';
-          setTimeout(() => { this.message = ''; }, 1000);
+          setTimeout(() => { this.message = ' '; }, 1000);
         })
         .catch((error) => {
           // eslint-disable-next-line
@@ -198,7 +242,7 @@ export default {
         .then(() => {
           this.getSongs();
           this.message = 'Song updated!';
-          setTimeout(() => { this.message = ''; }, 1000);
+          setTimeout(() => { this.message = ' '; }, 1000);
         })
         .catch((error) => {
           // eslint-disable-next-line
@@ -212,7 +256,7 @@ export default {
         .then(() => {
           this.getSongs();
           this.message = 'Song removed!';
-          setTimeout(() => { this.message = ''; }, 1000);
+          setTimeout(() => { this.message = ' '; }, 1000);
         })
         .catch((error) => {
           // eslint-disable-next-line
@@ -231,10 +275,20 @@ export default {
           document.body.appendChild(link);
           link.click();
           this.message = 'Song downloaded!';
-          setTimeout(() => { this.message = ''; }, 1000);
+          setTimeout(() => { this.message = ' '; }, 1000);
         })
         .catch((error) => {
           // eslint-disable-next-line
+          console.error(error);
+        });
+    },
+    recommendSong(song) {
+      const path = `http://localhost:5000/recommend/${song.id}`;
+      axios.get(path)
+        .then((response) => {
+          this.recommended = response.data.recommended;
+        })
+        .catch((error) => {
           console.error(error);
         });
     },
@@ -293,6 +347,9 @@ export default {
     },
     onDownloadSong(song) {
       this.downloadSong(song);
+    },
+    onRecommendSong(song) {
+      this.recommendSong(song);
     },
   },
   beforeMount() {

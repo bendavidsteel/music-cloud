@@ -2,6 +2,9 @@ import uuid
 import os
 import boto3
 import botocore
+import requests
+import urllib
+import base64
 from werkzeug.utils import secure_filename
 from flask import Flask, jsonify, request, send_file
 from flask_cors import CORS, cross_origin
@@ -14,6 +17,8 @@ BASEDIR = os.path.abspath(os.path.dirname(__file__))
 USERS_TABLE = os.environ['USERS_TABLE']
 IS_OFFLINE = os.environ.get('IS_OFFLINE')
 BUCKET_NAME = 'local-bucket'
+SPOTIFY_CLIENT_ID = "3e0d9d7298e44ab5994a9595100aff22"
+SPOTIFY_CLIENT_SECRET = "00bb019487644908b9202a88945259ff"
 
 # instantiate the app
 app = Flask(__name__)
@@ -69,6 +74,38 @@ def all_songs():
             name = request.form.get('name')
             artist = request.form.get('artist')
 
+            token = get_access_token()
+
+            # using spotify api to get album cover
+            query = {'q': 'track:' + name + ' ' + 'artist:' + artist, 'type': 'track', 'limit': '1'}
+            query = urllib.parse.urlencode(query, quote_via=urllib.parse.quote)
+
+            header = {'Authorization': 'Bearer ' + token}
+
+            spotify_url = "https://api.spotify.com/v1/search"
+
+            response = requests.get(spotify_url, params=query, headers=header)
+            
+            image_url = "none found"
+            track_id = "none found"
+            spotify = False
+
+            try:
+                # parsing response
+                data = response.json()
+                
+                album = data.get("tracks").get("items")[0].get("album")
+
+                track_id = album.get("id")
+
+                covers = album.get("images")
+
+                image_url = covers[1].get("url")
+
+                spotify = True
+            except Exception as e:
+                print(e)
+
             # posting song to db
             resp = db.put_item(
                 TableName=USERS_TABLE,
@@ -76,7 +113,10 @@ def all_songs():
                     'songId': {'S': song_id},
                     'name': {'S': name},
                     'artist': {'S': artist},
-                    'fileName': {'S': file_name}
+                    'fileName': {'S': file_name},
+                    'spotifyFound': {'BOOL': spotify},
+                    'imageUrl': {'S': image_url},
+                    'spotifyId': {'S': track_id}
                 }
             )
 
@@ -106,7 +146,10 @@ def all_songs():
                 'id': item.get('songId').get('S'),
                 'name': item.get('name').get('S'),
                 'artist': item.get('artist').get('S'),
-                'file': file_url
+                'file': file_url,
+                'spotify_found': item.get('spotifyFound').get('BOOL'),
+                'image_url': item.get('imageUrl').get('S'),
+                'spotify_id': item.get('spotifyId').get('S')
             })
 
         response_object['songs'] = SONGS
@@ -250,6 +293,70 @@ def single_song(song_id):
 
     return jsonify(response_object)
 
+@app.route('/recommend/<song_id>', methods=['GET'])
+def recommend_songs(song_id):
+
+    # recommend songs using spotify api
+
+    # get spotify song id from database
+    resp = db.get_item(
+            TableName = USERS_TABLE,
+            Key = {
+                'songId': {'S':song_id }
+            }
+        )
+    item = resp.get('Item')
+
+    if not item:
+        return jsonify({'error': 'Song does not exist'}), 404
+
+    spotify_id = item.get('spotifyId').get('S')
+
+    token = get_access_token()
+
+    # using spotify api to get album cover
+    query = {'seed_tracks': spotify_id, 'limit': '1'}
+    query = urllib.parse.urlencode(query, quote_via=urllib.parse.quote)
+
+    header = {'Authorization': 'Bearer ' + token}
+
+    spotify_url = "https://api.spotify.com/v1/recommendations"
+
+    response = requests.get(spotify_url, params=query, headers=header)
+    
+
+    try:
+        # parsing response
+        data = response.json()
+        print(data)
+
+    except Exception as e:
+        print(e)
+
+    SONGS = []
+
+    # sending songs
+    for item in items:
+        file_name = item.get('fileName').get('S')
+        
+        file_url = '%s/%s/%s' % (s3.meta.endpoint_url, BUCKET_NAME, file_name)
+
+        SONGS.append({
+            'id': item.get('songId').get('S'),
+            'name': item.get('name').get('S'),
+            'artist': item.get('artist').get('S'),
+            'file': file_url,
+            'spotify_found': item.get('spotifyFound').get('BOOL'),
+            'image_url': item.get('imageUrl').get('S'),
+            'spotify_id': item.get('spotifyId').get('S')
+        })
+
+    response_object['songs'] = SONGS
+
+    return jsonify(response_object)
+    
+
+# upload file to s3 bucket
 def upload_file_to_s3(file, file_name, bucket_name, acl="public-read"):
 
     try:
@@ -270,7 +377,26 @@ def upload_file_to_s3(file, file_name, bucket_name, acl="public-read"):
 
     return "{}{}/{}".format(app.config["S3_LOCATION"], BUCKET_NAME, file_name)
 
+# replace spaces with %20 characters
+def replace_spaces(string):
+    return string.replace(' ', '%20')
 
+# get access token from spotify api
+def get_access_token():
+    # obtaining spotify authentification
+    client_str = SPOTIFY_CLIENT_ID + ":" + SPOTIFY_CLIENT_SECRET
+    client64 = base64.b64encode(client_str.encode("utf-8"))
+
+    body = {'grant_type': 'client_credentials'}
+    header = {'Authorization': 'Basic ' + client64.decode("utf-8")}
+
+    spotify_token_url = 'https://accounts.spotify.com/api/token'
+
+    response = requests.post(spotify_token_url, data=body, headers=header)
+
+    data = response.json()
+
+    return data.get("access_token")
 
 if __name__ == '__main__':
     app.run(debug=True,host='0.0.0.0')

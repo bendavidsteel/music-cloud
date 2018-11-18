@@ -69,6 +69,10 @@ functions:
     handler: wsgi.handler
     events:
       - http: 'DELETE /songs/{song_id}'
+  recommendSong:
+    handler: wsgi.handler
+    events:
+      - http: 'GET /recommend/{song_id}'
 
 resources:
   Resources:
