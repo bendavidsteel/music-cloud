@@ -62,6 +62,8 @@ def all_songs():
     response_object = {'status': 'success'}
     if request.method == 'POST':
 
+        song_url = "unavailable"
+
         # saving song file
         submitted_file = request.files.get('file')
         if submitted_file and allowed_filename(submitted_file.filename):
@@ -70,60 +72,82 @@ def all_songs():
 
             file_name = secure_filename(name_artist)
 
-            song_id = uuid.uuid4().hex
-            name = request.form.get('name')
-            artist = request.form.get('artist')
-
-            token = get_access_token()
-
-            # using spotify api to get album cover
-            query = {'q': 'track:' + name + ' ' + 'artist:' + artist, 'type': 'track', 'limit': '1'}
-            query = urllib.parse.urlencode(query, quote_via=urllib.parse.quote)
-
-            header = {'Authorization': 'Bearer ' + token}
-
-            spotify_url = "https://api.spotify.com/v1/search"
-
-            response = requests.get(spotify_url, params=query, headers=header)
-            
-            image_url = "none found"
-            track_id = "none found"
-            spotify = False
-
-            try:
-                # parsing response
-                data = response.json()
-                
-                album = data.get("tracks").get("items")[0].get("album")
-
-                track_id = album.get("id")
-
-                covers = album.get("images")
-
-                image_url = covers[1].get("url")
-
-                spotify = True
-            except Exception as e:
-                print(e)
-
-            # posting song to db
-            resp = db.put_item(
-                TableName=USERS_TABLE,
-                Item = {
-                    'songId': {'S': song_id},
-                    'name': {'S': name},
-                    'artist': {'S': artist},
-                    'fileName': {'S': file_name},
-                    'spotifyFound': {'BOOL': spotify},
-                    'imageUrl': {'S': image_url},
-                    'spotifyId': {'S': track_id}
-                }
-            )
-
             output = upload_file_to_s3(submitted_file, file_name, BUCKET_NAME)
-            print(output)
+        
+            song_url = file_name
+
+            file_provided = True
+            playback = True
         else:
-            return jsonify({'error': 'Please provide valid file'}),400
+            file_provided = False
+            playback = False
+
+
+
+        song_id = uuid.uuid4().hex
+        name = request.form.get('name')
+        artist = request.form.get('artist')
+
+        token = get_access_token()
+
+        # using spotify api to get album cover
+        query = {'q': 'track:' + name + ' ' + 'artist:' + artist, 'type': 'track', 'limit': '1'}
+        query = urllib.parse.urlencode(query, quote_via=urllib.parse.quote)
+
+        header = {'Authorization': 'Bearer ' + token}
+
+        spotify_url = "https://api.spotify.com/v1/search"
+
+        response = requests.get(spotify_url, params=query, headers=header)
+        
+        image_url = "none found"
+        track_id = "none found"
+        artist_id = "none found"
+        spotify = False
+
+        try:
+        # parsing response
+            data = response.json()
+            
+            item = data.get("tracks").get("items")[0]
+
+            artist_id = item.get("album").get("artists")[0].get("id")
+
+            track_id = item.get("id")
+
+            covers = item.get("album").get("images")
+
+            image_url = covers[1].get("url")
+
+            if not file_provided:
+                if item.get("preview_url") != None:
+                    song_url = item.get("preview_url")
+                    playback = True
+                else:
+                    playback = False
+
+            spotify = True
+        except Exception as e:
+            print(e)
+
+        print(song_url)
+
+        # posting song to db
+        resp = db.put_item(
+            TableName=USERS_TABLE,
+            Item = {
+                'songId': {'S': song_id},
+                'name': {'S': name},
+                'artist': {'S': artist},
+                'songUrl': {'S': song_url},
+                'fileProvided': {'BOOL': file_provided},
+                'playback': {'BOOL': playback},
+                'spotifyFound': {'BOOL': spotify},
+                'imageUrl': {'S': image_url},
+                'spotifyTrackId': {'S': track_id},
+                'spotifyArtistId': {'S': artist_id}
+            }
+        )
 
         response_object['message'] = 'Song added!'
     
@@ -138,18 +162,25 @@ def all_songs():
         SONGS = []
 
         for item in items:
-            file_name = item.get('fileName').get('S')
-            
-            file_url = '%s/%s/%s' % (s3.meta.endpoint_url, BUCKET_NAME, file_name)
+
+            file_provided = item.get('fileProvided').get('BOOL')
+
+            file_name = item.get('songUrl').get('S')
+
+            if file_provided:
+                song_url = '%s/%s/%s' % (s3.meta.endpoint_url, BUCKET_NAME, file_name)
+            else:
+                song_url = file_name
 
             SONGS.append({
                 'id': item.get('songId').get('S'),
                 'name': item.get('name').get('S'),
                 'artist': item.get('artist').get('S'),
-                'file': file_url,
+                'file': song_url,
                 'spotify_found': item.get('spotifyFound').get('BOOL'),
-                'image_url': item.get('imageUrl').get('S'),
-                'spotify_id': item.get('spotifyId').get('S')
+                'file_provided': file_provided,
+                'playback': item.get('playback').get('BOOL'),
+                'image_url': item.get('imageUrl').get('S')
             })
 
         response_object['songs'] = SONGS
@@ -172,7 +203,7 @@ def single_song(song_id):
         if not item:
             return jsonify({'error': 'Song does not exist'}), 404
 
-        file_name = item.get('fileName').get('S')
+        file_name = item.get('songUrl').get('S')
         
         file_url = '%s/%s/%s' % (s3.meta.endpoint_url, BUCKET_NAME, file_name)
 
@@ -217,12 +248,10 @@ def single_song(song_id):
 
         name= item.get('name').get('S')
         artist = item.get('artist').get('S')
-        file_name = item.get('fileName').get('S')
+        file_name = item.get('songUrl').get('S')
 
         name = request.form.get('name')
         artist = request.form.get('artist')
-
-        print(name)
 
         # saving song file
         submitted_file = request.files.get('file')
@@ -233,7 +262,6 @@ def single_song(song_id):
             file_name = secure_filename(name_artist)
 
             output = upload_file_to_s3(submitted_file, file_name, BUCKET_NAME)
-            print(output)
 
 
         # posting song to db
@@ -242,7 +270,7 @@ def single_song(song_id):
             Key = {
                 'songId': {'S': song_id}
             },
-            UpdateExpression="set #n = :n, artist = :a, fileName = :f",
+            UpdateExpression="set #n = :n, artist = :a, songUrl = :f",
             ExpressionAttributeValues={
                 ':n': {'S': name},
                 ':a': {'S': artist},
@@ -268,8 +296,6 @@ def single_song(song_id):
         if not item:
             return jsonify({'error': 'Song does not exist'}), 404
 
-        file_name = item.get('fileName').get('S')
-
         resp = db.delete_item(
             TableName=USERS_TABLE,
             Key = {
@@ -280,14 +306,17 @@ def single_song(song_id):
         # if not song:
         #     return jsonify({'error': 'Unable to delete song file as it was not found'}), 404
 
-        try:
-            s3.delete_object(
-                Bucket = BUCKET_NAME,
-                Key = file_name
-            )
-        except Exception as e:
-            print(e.with_traceback)
-            return jsonify({'error': 'Unable to delete song file, please try again'}), 400
+        if item.get("fileProvided"):
+
+            file_name = item.get("song_url")
+            try:
+                s3.delete_object(
+                    Bucket = BUCKET_NAME,
+                    Key = file_name
+                )
+            except Exception as e:
+                print(e.with_traceback)
+                return jsonify({'error': 'Unable to delete song file, please try again'}), 400
 
         response_object['message'] = 'Song removed!'
 
@@ -296,6 +325,7 @@ def single_song(song_id):
 @app.route('/recommend/<song_id>', methods=['GET'])
 def recommend_songs(song_id):
 
+    response_object = {}
     # recommend songs using spotify api
 
     # get spotify song id from database
@@ -310,12 +340,13 @@ def recommend_songs(song_id):
     if not item:
         return jsonify({'error': 'Song does not exist'}), 404
 
-    spotify_id = item.get('spotifyId').get('S')
+    spotify_track_id = item.get('spotifyTrackId').get('S')
+    spotify_artist_id = item.get('spotifyArtistId').get('S')
 
     token = get_access_token()
 
     # using spotify api to get album cover
-    query = {'seed_tracks': spotify_id, 'limit': '1'}
+    query = {'seed_artists': spotify_artist_id, 'seed_tracks': spotify_track_id, 'limit': '3'}
     query = urllib.parse.urlencode(query, quote_via=urllib.parse.quote)
 
     header = {'Authorization': 'Bearer ' + token}
@@ -323,35 +354,38 @@ def recommend_songs(song_id):
     spotify_url = "https://api.spotify.com/v1/recommendations"
 
     response = requests.get(spotify_url, params=query, headers=header)
-    
+
+    SONGS = []
 
     try:
         # parsing response
         data = response.json()
-        print(data)
+        
+
+        # sending songs
+        for track in data.get("tracks"):
+
+            name = track.get("name")
+            artist = track.get("artists")[0].get("name")
+            link = track.get("external_urls").get("spotify")
+            image_url = track.get("album").get("images")[1].get("url")
+            if track.get("preview_url") != None:
+                preview_url = track.get("preview_url")
+            else:
+                preview_url = "no sample"
+
+            SONGS.append({
+                'name': name,
+                'artist': artist,
+                'image_url': image_url,
+                'spotify_url': link,
+                'preview_url': preview_url
+            })
+
+        response_object['songs'] = SONGS
 
     except Exception as e:
         print(e)
-
-    SONGS = []
-
-    # sending songs
-    for item in items:
-        file_name = item.get('fileName').get('S')
-        
-        file_url = '%s/%s/%s' % (s3.meta.endpoint_url, BUCKET_NAME, file_name)
-
-        SONGS.append({
-            'id': item.get('songId').get('S'),
-            'name': item.get('name').get('S'),
-            'artist': item.get('artist').get('S'),
-            'file': file_url,
-            'spotify_found': item.get('spotifyFound').get('BOOL'),
-            'image_url': item.get('imageUrl').get('S'),
-            'spotify_id': item.get('spotifyId').get('S')
-        })
-
-    response_object['songs'] = SONGS
 
     return jsonify(response_object)
     

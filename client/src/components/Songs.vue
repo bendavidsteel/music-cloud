@@ -2,16 +2,16 @@
   <div class="container">
     <div class="row">
       <div class="col-sm-10">
-        <h1>Songs</h1>
+        <h1>MusicCloud</h1>
         <hr><br><br>
         <alert :message=message v-if="showMessage"></alert>
-        <button type="button" class="btn btn-success btn-sm" v-b-modal.song-modal>Add Song</button>
+        <button type="button" class="btn btn-success btn-sm" v-b-modal.song-modal>Add Track</button>
         <br><br>
         <table class="table table-hover">
           <thead>
             <tr>
               <th></th>
-              <th scope="col">Song Name</th>
+              <th scope="col">Track Name</th>
               <th scope="col">Artist</th>
               <th></th>
               <th></th>
@@ -25,7 +25,8 @@
               <td>{{ song.name }}</td>
               <td>{{ song.artist }}</td>
               <td>
-                <audio controls>
+                <audio controls
+                       v-if="song.playback">
                   <source v-bind:src="song.file" type="audio/mpeg">
                   Your browser does not support the audio element.
                 </audio>
@@ -34,6 +35,7 @@
                 <button
                         type="button"
                         class="btn btn-success btn-sm"
+                        v-if="song.file_provided"
                         v-b-modal.song-download-modal
                         @click="onDownloadSong(song)">
                     Download
@@ -67,17 +69,17 @@
     </div>
     <b-modal ref="addSongModal"
              id="song-modal"
-             title="Add a new song"
+             title="Add a new track"
              hide-footer>
       <b-form @submit="onSubmit" @reset="onReset" class="w-100">
       <b-form-group id="form-name-group"
-                    label="Song Name:"
+                    label="Track Name:"
                     label-for="form-name-input">
           <b-form-input id="form-name-input"
                         ref="formNameInput"
                         type="text"
                         v-model="addSongForm.name"
-                        placeholder="Enter song name">
+                        placeholder="Enter track name">
           </b-form-input>
         </b-form-group>
         <b-form-group id="form-artist-group"
@@ -104,21 +106,21 @@
     </b-modal>
     <b-modal ref="editSongModal"
              id="song-update-modal"
-             title="Update"
+             title="Update Track"
              hide-footer>
       <b-form @submit="onSubmitUpdate" @reset="onResetUpdate" class="w-100">
         <b-form-group id="form-name-edit-group"
-                    label="Song Name:"
+                    label="Updated Track Name:"
                     label-for="form-name-edit-input">
           <b-form-input id="form-name-edit-input"
                         ref="formNameEditInput"
                         type="text"
                         v-model="editForm.name"
-                        placeholder="Enter name">
+                        placeholder="Enter track name">
           </b-form-input>
         </b-form-group>
         <b-form-group id="form-artist-edit-group"
-                      label="Artist:"
+                      label="Updated Artist:"
                       label-for="form-artist-edit-input">
             <b-form-input id="form-artist-edit-input"
                           ref="formArtistEditInput"
@@ -142,6 +144,7 @@
     <b-modal ref="recommendSongsModal"
              id="recommend-songs-modal"
              title="Recommended"
+             size="lg"
              hide-footer>
       <table class="table table-hover">
           <thead>
@@ -149,21 +152,25 @@
               <th></th>
               <th scope="col">Song Name</th>
               <th scope="col">Artist</th>
-              <th></th>
+              <th scope="col">Preview</th>
+              <th scope="col">Link</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="(song, index) in recommended" :key="index">
               <td>
-                <img v-bind:src="song.image_url" alt="" height="150" width="150">
+                <img v-bind:src="song.image_url" alt="" height="100" width="100">
               </td>
               <td>{{ song.name }}</td>
               <td>{{ song.artist }}</td>
               <td>
                 <audio controls>
-                  <source v-bind:src="song.file" type="audio/mpeg">
-                  Your browser does not support the audio element.
+                  <source v-bind:src="song.preview_url" type="audio/mpeg">
+                  No audio
                 </audio>
+              </td>
+              <td>
+                <a v-bind:href="song.spotify_url">Spotify</a>
               </td>
             </tr>
           </tbody>
@@ -282,11 +289,11 @@ export default {
           console.error(error);
         });
     },
-    recommendSong(song) {
+    recommendSongs(song) {
       const path = `http://localhost:5000/recommend/${song.id}`;
       axios.get(path)
         .then((response) => {
-          this.recommended = response.data.recommended;
+          this.recommended = response.data.songs;
         })
         .catch((error) => {
           console.error(error);
@@ -348,8 +355,9 @@ export default {
     onDownloadSong(song) {
       this.downloadSong(song);
     },
-    onRecommendSong(song) {
-      this.recommendSong(song);
+    onRecommendSongs(song) {
+      this.recommended = [];
+      this.recommendSongs(song);
     },
   },
   beforeMount() {
