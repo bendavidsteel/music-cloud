@@ -64,13 +64,19 @@ def all_songs():
 
         song_url = "unavailable"
 
+        song_id = uuid.uuid4().hex
+
+        name = request.form.get('name')
+        artist = request.form.get('artist')
+
         # saving song file
         submitted_file = request.files.get('file')
         if submitted_file and allowed_filename(submitted_file.filename):
 
-            name_artist = request.form.get('name') + '_' + request.form.get('artist') + '.mp3'
+            # name_artist = request.form.get('name') + '_' + request.form.get('artist') + '.mp3'
 
-            file_name = secure_filename(name_artist)
+            # file_name = secure_filename(name_artist)
+            file_name = name + '--' + artist + '--' + song_id + '.mp3'
 
             output = upload_file_to_s3(submitted_file, file_name, BUCKET_NAME)
         
@@ -82,55 +88,10 @@ def all_songs():
             file_provided = False
             playback = False
 
+        image_url, preview_url, track_id, artist_id, spotify, playback = identify_song(name, artist, file_provided)
 
-
-        song_id = uuid.uuid4().hex
-        name = request.form.get('name')
-        artist = request.form.get('artist')
-
-        token = get_access_token()
-
-        # using spotify api to get album cover
-        query = {'q': 'track:' + name + ' ' + 'artist:' + artist, 'type': 'track', 'limit': '1'}
-        query = urllib.parse.urlencode(query, quote_via=urllib.parse.quote)
-
-        header = {'Authorization': 'Bearer ' + token}
-
-        spotify_url = "https://api.spotify.com/v1/search"
-
-        response = requests.get(spotify_url, params=query, headers=header)
-        
-        image_url = "none found"
-        track_id = "none found"
-        artist_id = "none found"
-        spotify = False
-
-        try:
-        # parsing response
-            data = response.json()
-            
-            item = data.get("tracks").get("items")[0]
-
-            artist_id = item.get("album").get("artists")[0].get("id")
-
-            track_id = item.get("id")
-
-            covers = item.get("album").get("images")
-
-            image_url = covers[1].get("url")
-
-            if not file_provided:
-                if item.get("preview_url") != None:
-                    song_url = item.get("preview_url")
-                    playback = True
-                else:
-                    playback = False
-
-            spotify = True
-        except Exception as e:
-            print(e)
-
-        print(song_url)
+        if not file_provided:
+            song_url = preview_url
 
         # posting song to db
         resp = db.put_item(
@@ -203,35 +164,23 @@ def single_song(song_id):
         if not item:
             return jsonify({'error': 'Song does not exist'}), 404
 
+        # delivering file url in s3 bucket
         file_name = item.get('songUrl').get('S')
         
         file_url = '%s/%s/%s' % (s3.meta.endpoint_url, BUCKET_NAME, file_name)
 
         response_object['file_url'] = file_url
 
-        # # try:
-        # obj = s3.get_object(
-        #     Bucket = BUCKET_NAME,
-        #     Key = file_name
-        # )
+        # getting song name
+        name = item.get('name').get('S')
+        artist = item.get('artist').get('S')
 
-        # fileobj = obj['Body']
+        track_name = name + "--" + artist + '.mp3'
 
-        # response = send_file(fileobj, 
-        #                         as_attachment=True,
-        #                         attachment_filename=file_name,
-        #                         mimetype='audio/mpeg')
-        
-        # response_object.headers.add('Access-Control-Allow-Origin', '*')
+        response_object['file_name'] = track_name
 
         return jsonify(response_object)
         
-        # except Exception as e:
-        #     print(e)
-        #     return jsonify({'error': 'Unable to deliver song file'}), 400
-
-        
-
 
     if request.method == 'PUT':
 
@@ -249,6 +198,7 @@ def single_song(song_id):
         name= item.get('name').get('S')
         artist = item.get('artist').get('S')
         file_name = item.get('songUrl').get('S')
+        file_provided = item.get('fileProvided').get('BOOL')
 
         name = request.form.get('name')
         artist = request.form.get('artist')
@@ -257,12 +207,22 @@ def single_song(song_id):
         submitted_file = request.files.get('file')
         if submitted_file and allowed_filename(submitted_file.filename):
 
-            name_artist = request.form.get('name') + '_' + request.form.get('artist') + '.mp3'
+            if not delete_file(file_provided, file_name):
+                print("Unable to delete old file")
 
-            file_name = secure_filename(name_artist)
+            file_provided = True
+
+            # name_artist = request.form.get('name') + '_' + request.form.get('artist') + '.mp3'
+
+            # file_name = secure_filename(name_artist)
+            file_name = name + '--' + artist + '--' + song_id + '.mp3'
 
             output = upload_file_to_s3(submitted_file, file_name, BUCKET_NAME)
 
+        image_url, preview_url, track_id, artist_id, spotify, playback = identify_song(name, artist, file_provided)
+
+        if not file_provided:
+            file_name = preview_url
 
         # posting song to db
         resp = db.update_item(
@@ -270,11 +230,17 @@ def single_song(song_id):
             Key = {
                 'songId': {'S': song_id}
             },
-            UpdateExpression="set #n = :n, artist = :a, songUrl = :f",
+            UpdateExpression="set #n = :n, artist = :a, songUrl = :sU, fileProvided = :fP, imageUrl = :iU, spotifyTrackId = :tI, spotifyArtistId = :aI, spotifyFound = :sF, playback = :p",
             ExpressionAttributeValues={
                 ':n': {'S': name},
                 ':a': {'S': artist},
-                ':f': {'S': file_name}
+                ':sU': {'S': file_name},
+                ':fP': {'BOOL': file_provided},
+                ':iU': {'S': image_url},
+                ':tI': {'S': track_id},
+                ':aI': {'S': artist_id},
+                ':sF': {'BOOL': spotify},
+                ':p': {'BOOL': playback}
             },
             ExpressionAttributeNames={
                 '#n': 'name'
@@ -306,17 +272,12 @@ def single_song(song_id):
         # if not song:
         #     return jsonify({'error': 'Unable to delete song file as it was not found'}), 404
 
-        if item.get("fileProvided"):
+        file_provided = item.get("fileProvided")
 
-            file_name = item.get("song_url")
-            try:
-                s3.delete_object(
-                    Bucket = BUCKET_NAME,
-                    Key = file_name
-                )
-            except Exception as e:
-                print(e.with_traceback)
-                return jsonify({'error': 'Unable to delete song file, please try again'}), 400
+        file_name = item.get("song_url")
+
+        if not delete_file(file_provided, file_name):
+            return jsonify({'error': 'Unable to delete song file, please try again'}), 400
 
         response_object['message'] = 'Song removed!'
 
@@ -431,6 +392,68 @@ def get_access_token():
     data = response.json()
 
     return data.get("access_token")
+
+def identify_song(name, artist, file_provided):
+    token = get_access_token()
+
+    # using spotify api to get album cover
+    query = {'q': 'track:' + name + ' ' + 'artist:' + artist, 'type': 'track', 'limit': '1'}
+    query = urllib.parse.urlencode(query, quote_via=urllib.parse.quote)
+
+    header = {'Authorization': 'Bearer ' + token}
+
+    spotify_url = "https://api.spotify.com/v1/search"
+
+    response = requests.get(spotify_url, params=query, headers=header)
+    
+    image_url = "none found"
+    track_id = "none found"
+    artist_id = "none found"
+    preview_url = "none found"
+    spotify = False
+    playback = False
+
+    try:
+    # parsing response
+        data = response.json()
+        
+        item = data.get("tracks").get("items")[0]
+
+        artist_id = item.get("album").get("artists")[0].get("id")
+
+        track_id = item.get("id")
+
+        covers = item.get("album").get("images")
+
+        image_url = covers[1].get("url")
+
+        if not file_provided:
+            if item.get("preview_url") != None:
+                preview_url = item.get("preview_url")
+                playback = True
+            else:
+                playback = False
+        else:
+            playback = True
+
+        spotify = True
+    except Exception as e:
+        print(e)
+
+    return image_url, preview_url, track_id, artist_id, spotify, playback
+
+def delete_file(file_provided, file_name):
+    if file_provided:
+        try:
+            s3.delete_object(
+                Bucket = BUCKET_NAME,
+                Key = file_name
+            )
+        except Exception as e:
+            print(e.with_traceback)
+            return False
+        finally:
+            return True
 
 if __name__ == '__main__':
     app.run(debug=True,host='0.0.0.0')

@@ -154,6 +154,7 @@
               <th scope="col">Artist</th>
               <th scope="col">Preview</th>
               <th scope="col">Link</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -171,6 +172,15 @@
               </td>
               <td>
                 <a v-bind:href="song.spotify_url">Spotify</a>
+              </td>
+              <td>
+                <button
+                        type="button"
+                        class="btn btn-primary btn-sm"
+                        v-b-modal.add-song-modal
+                        @click="onAddSong(song, index)">
+                    Add track
+                </button>
               </td>
             </tr>
           </tbody>
@@ -277,8 +287,7 @@ export default {
         .then((response) => {
           const link = document.createElement('a');
           link.href = response.data.file_url;
-          const title = `${song.name}_${song.artist}.mp3`;
-          link.setAttribute('download', title); // or any other extension
+          link.title = response.data.file_name;
           document.body.appendChild(link);
           link.click();
           this.message = 'Song downloaded!';
@@ -358,6 +367,14 @@ export default {
     onRecommendSongs(song) {
       this.recommended = [];
       this.recommendSongs(song);
+    },
+    onAddSong(song) {
+      const formData = new FormData();
+
+      formData.append('name', song.name);
+      formData.append('artist', song.artist);
+
+      this.addSong(formData);
     },
   },
   beforeMount() {
