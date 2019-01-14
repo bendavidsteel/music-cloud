@@ -1,16 +1,15 @@
 # serverless.yml
 
-service: serverless-flask
+service: music-cloud
 
 plugins:
   - serverless-python-requirements
   - serverless-wsgi
-  - serverless-dynamodb-local
-  - serverless-s3-local
-  - serverless-offline
+  - serverless-finch
 
 custom:
-  tableName: 'users-table-${self:provider.stage}'
+  tableName: 'track-table-${self:provider.stage}'
+  bucketName: 'track-bucket-${self:provider.stage}'
   wsgi:
     app: app.app
     packRequirements: false
@@ -19,10 +18,9 @@ custom:
   dynamodb:
     start:
       migrate: true
-  s3:
-    host: 0.0.0.0
-    port: 8001
-    directory: /tmp
+  client:
+    bucketName: music-cloud-client-bucket
+    distributionFolder: client/dist/
 
 provider:
   name: aws
@@ -39,9 +37,29 @@ provider:
         - dynamodb:UpdateItem
         - dynamodb:DeleteItem
       Resource:
-        - { "Fn::GetAtt": ["UsersDynamoDBTable", "Arn" ] }
+        - arn:aws:dynamodb:us-east-1:195711764773:table/track-table-dev
+
+    - Effect: Allow
+      Action:
+        - s3:UploadFileObj
+        - s3:PutObject
+        - s3:DeleteObject
+        - s3:GetObject
+        - s3:*
+      Resource:
+        - arn:aws:s3:::*/*
+
+    - Effect: Allow
+      Action:
+        - logs:CreateLogGroup
+        - logs:CreateLogStream
+        - logs:PutLogEvents
+      Resource:
+        - arn:aws:logs::us-east-1:195711764773:*
+
+
   environment:
-    USERS_TABLE: ${self:custom.tableName}
+    TRACK_TABLE: ${self:custom.tableName}
 
 functions:
   app:
@@ -52,31 +70,49 @@ functions:
   postSong:
     handler: wsgi.handler
     events:
-      - http: 'POST /songs'
+      - http:
+          path: songs
+          method: post
+          cors: true
   getSongs:
     handler: wsgi.handler
     events:
-      - http: 'GET /songs'
+      - http:
+          path: songs
+          method: get
+          cors: true
   downloadSong:
     handler: wsgi.handler
     events:
-      - http: 'GET /songs/{song_id}'
+      - http:
+          path: songs/{song_id}
+          method: get
+          cors: true
   updateSong:
     handler: wsgi.handler
     events:
-      - http: 'PUT /songs/{song_id}'
+      - http:
+          path: songs/{song_id}
+          method: put
+          cors: true
   deleteSong:
     handler: wsgi.handler
     events:
-      - http: 'DELETE /songs/{song_id}'
+      - http:
+          path: songs/{song_id}
+          method: delete
+          cors: true
   recommendSong:
     handler: wsgi.handler
     events:
-      - http: 'GET /recommend/{song_id}'
+      - http:
+          path: recommend/{song_id}
+          method: get
+          cors: true
 
 resources:
   Resources:
-    UsersDynamoDBTable:
+    DynamoDBTableTracks:
       Type: 'AWS::DynamoDB::Table'
       Properties:
         AttributeDefinitions:
@@ -91,7 +127,23 @@ resources:
           ReadCapacityUnits: 1
           WriteCapacityUnits: 1
         TableName: ${self:custom.tableName}
-    NewResource:
+
+    S3Tracks:
       Type: AWS::S3::Bucket
       Properties:
-        BucketName: local-bucket
+        CorsConfiguration:
+          CorsRules:
+            -
+              AllowedOrigins:
+                - '*'
+              AllowedHeaders:
+                - '*'
+              AllowedMethods:
+                - GET
+                - PUT
+                - POST
+                - DELETE
+                - HEAD
+              MaxAge: 3000
+
+
