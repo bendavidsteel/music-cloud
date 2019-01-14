@@ -1,0 +1,51 @@
+config:
+  target: 'https://3p44ypj9fe.execute-api.us-east-1.amazonaws.com/dev'
+  phases:
+    - duration: 1
+      arrivalRate: 1
+  processor: './file-util.js'
+  defaults:
+    headers:
+scenarios:
+  - flow:
+    - log: Create new track entry
+    - post:
+        url: "/songs"
+        formData:
+          name: "Forever Dolphin Love"
+          artist: "Connan Mockasin"
+          file: "False
+    - get:
+        url: "/songs"
+        capture:
+          json: "songs[0].id"
+          as: "id"
+    - log: Ask for recommendation
+    - get:
+        url: "/recommend/{{ id }}"
+    - log: Post track file
+    - put:
+        url: "/songs/{{ id }}"
+        beforeRequest: 'setJSONBody'
+        afterResponse: 'logResponse'
+        formData:
+          name: "Forever Dolphin Love"
+          artist: "Connan Mockasin"
+          file: "True"
+        capture:
+          json: "presigned.url"
+          as: "url"
+          json: "presigned.fields.key"
+          as: "key"
+          json: "presigned.fields.ACL"
+          as: "ACL"
+          json: "presigned.fields.Content-Type"
+          as: "Content-Type"
+          json: "presigned.
+    - get:
+        url: "/songs/{{ id }}"
+    - log: Delete track
+    - delete:
+        url: "/songs/{{ id }}"
+        
+

@@ -1,0 +1,32 @@
+config:
+  target: 'https://3p44ypj9fe.execute-api.us-east-1.amazonaws.com/dev'
+  phases:
+    - duration: 10
+      arrivalRate: 10
+    - duration: 20
+      arrivalRate: 10
+      rampTo: 100
+    - duration: 30
+      arrivalRate: 100
+  defaults:
+    headers:
+scenarios:
+  - flow:
+    - log: "Posting track"
+    - post:
+        url: "/songs"
+        formData:
+          name: "Forever Dolphin Love"
+          artist: "Connan Mockasin"
+          file: "False"
+    - get:
+        url: "/songs"
+        capture:
+          json: "songs[0].id"
+          as: "id"
+    - log: "Requesting recommendation"
+    - get:
+        url: "/recommend/{{ id }}"
+    - log: "Deleting track listing"
+    - delete:
+        url: "/songs/{{ id }}"
