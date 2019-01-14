@@ -211,7 +211,8 @@ export default {
       },
       message: '',
       showMessage: true,
-      basePath: 'http://localhost:5000',
+      basePath: 'https://3p44ypj9fe.execute-api.us-east-1.amazonaws.com/dev',
+      // basePath: 'http://localhost:5000',
     };
   },
   components: {
@@ -219,7 +220,7 @@ export default {
   },
   methods: {
     getSongs() {
-      const path = 'http://localhost:5000/songs';
+      const path = `${this.basePath}/songs`;
       axios.get(path)
         .then((res) => {
           this.songs = res.data.songs;
@@ -229,16 +230,16 @@ export default {
           console.error(error);
         });
     },
-    addSong(payload) {
-      const path = 'http://localhost:5000/songs';
+    addSong(payload, file) {
+      const path = `${this.basePath}/songs`;
       axios.post(path, payload,
         {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
         })
-        .then(() => {
-          this.getSongs();
+        .then((response) => {
+          this.uploadSong(response.data.presigned, file);
           this.message = 'Song added!';
           setTimeout(() => { this.message = ' '; }, 1000);
         })
@@ -248,16 +249,16 @@ export default {
           this.getSongs();
         });
     },
-    updateSong(payload, songID) {
-      const path = `http://localhost:5000/songs/${songID}`;
+    updateSong(payload, songID, file) {
+      const path = `${this.basePath}/songs/${songID}`;
       axios.put(path, payload,
         {
           headers: {
             'Content-Type': 'multipart/form-data',
           },
         })
-        .then(() => {
-          this.getSongs();
+        .then((response) => {
+          this.uploadSong(response.data.presigned, file);
           this.message = 'Song updated!';
           setTimeout(() => { this.message = ' '; }, 1000);
         })
@@ -268,7 +269,7 @@ export default {
         });
     },
     removeSong(songID) {
-      const path = `http://localhost:5000/songs/${songID}`;
+      const path = `${this.basePath}/songs/${songID}`;
       axios.delete(path)
         .then(() => {
           this.getSongs();
@@ -282,12 +283,12 @@ export default {
         });
     },
     downloadSong(song) {
-      const path = `http://localhost:5000/songs/${song.id}`;
+      const path = `${this.basePath}/songs/${song.id}`;
       axios.get(path)
         .then((response) => {
           const link = document.createElement('a');
           link.href = response.data.file_url;
-          link.title = response.data.file_name;
+          link.download = response.data.file_name;
           document.body.appendChild(link);
           link.click();
           this.message = 'Song downloaded!';
@@ -298,14 +299,39 @@ export default {
           console.error(error);
         });
     },
+    uploadSong(presigned, file) {
+      if (file) {
+        const formData = new FormData();
+        formData.append('key', presigned.fields.key);
+        formData.append('ACL', presigned.fields.ACL);
+        formData.append('Content-Type', presigned.fields['Content-Type']);
+        formData.append('signature', presigned.fields.signature);
+        formData.append('policy', presigned.fields.policy);
+        formData.append('AWSAccessKeyId', presigned.fields.AWSAccessKeyId);
+        formData.append('x-amz-security-token', presigned.fields['x-amz-security-token']);
+        formData.append('file', file);
+        axios.post(presigned.url, formData,
+          {
+            headers: {
+              'Content-Type': 'multipart/form-data',
+            },
+          })
+          .then(() => {
+            this.getSongs();
+          })
+          .catch(() => {
+          });
+      } else {
+        this.getSongs();
+      }
+    },
     recommendSongs(song) {
-      const path = `http://localhost:5000/recommend/${song.id}`;
+      const path = `${this.basePath}/recommend/${song.id}`;
       axios.get(path)
         .then((response) => {
           this.recommended = response.data.songs;
         })
-        .catch((error) => {
-          console.error(error);
+        .catch(() => {
         });
     },
     initForm() {
@@ -326,9 +352,12 @@ export default {
 
       formData.append('name', this.addSongForm.name);
       formData.append('artist', this.addSongForm.artist);
-      formData.append('file', this.addSongForm.file);
-
-      this.addSong(formData);
+      if (this.addSongForm.file) {
+        formData.append('file', 'True');
+      } else {
+        formData.append('file', 'False');
+      }
+      this.addSong(formData, this.addSongForm.file);
       this.initForm();
     },
     onSubmitUpdate(evt) {
@@ -339,9 +368,13 @@ export default {
 
       formData.append('name', this.editForm.name);
       formData.append('artist', this.editForm.artist);
-      formData.append('file', this.editForm.file);
+      if (this.editForm.file) {
+        formData.append('file', 'True');
+      } else {
+        formData.append('file', 'False');
+      }
 
-      this.updateSong(formData, this.editForm.id);
+      this.updateSong(formData, this.editForm.id, this.editForm.file);
       this.initForm();
     },
     onReset(evt) {
@@ -374,7 +407,7 @@ export default {
       formData.append('name', song.name);
       formData.append('artist', song.artist);
 
-      this.addSong(formData);
+      this.addSong(formData, null);
     },
   },
   beforeMount() {
